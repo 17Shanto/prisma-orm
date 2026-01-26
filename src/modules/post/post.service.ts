@@ -35,6 +35,9 @@ const getAllPost = async (
     where: where,
     skip,
     take: limit,
+    orderBy:{
+      createdAt: "desc"
+    },
     include: {
       author: {
         select: {
@@ -52,11 +55,20 @@ const getAllPost = async (
       page,
       limit,
       total,
+      totalPages: Math.ceil(total/limit)
     },
   };
 };
 
 const getPostById = async (id: number) => {
+  await prisma.post.update({
+    where: {id},
+    data: {
+      views:{
+        increment: 1
+      }
+    }
+  })
   const result = await prisma.post.findUnique({
     where: {
       id,
