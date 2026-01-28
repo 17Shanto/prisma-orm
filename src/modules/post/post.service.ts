@@ -8,47 +8,51 @@ const getAllPost = async (
   isFeatured?: boolean,
   tags?: string[],
 ) => {
-  // console.log(tags);
   const skip = (page - 1) * limit;
-  const where: any = {
-    AND: [
-      search && {
-        OR: [
-          {
-            title: {
-              contains: search,
-              mode: "insensitive",
-            },
-          },
-        ],
-      },
-      {
-        isFeatured: isFeatured,
-      },
-      tags &&
-        tags.length > 0 && {
-          tags: { hasEvery: tags },
-        },
-    ].filter(Boolean),
-  };
+
+  // 1. Initialize an empty conditions array
+  const andConditions: Prisma.PostWhereInput[] = [];
+
+  // 2. Add search condition
+  if (search) {
+    andConditions.push({
+      OR: [
+        { title: { contains: search, mode: "insensitive" } },
+        { content: { contains: search, mode: "insensitive" } }, // Added content search too!
+      ],
+    });
+  }
+
+  // 3. Add isFeatured only if it's strictly a boolean
+  if (typeof isFeatured === "boolean") {
+    andConditions.push({ isFeatured });
+  }
+
+  // 4. Add tags only if they exist
+  if (tags && tags.length > 0) {
+    andConditions.push({
+      tags: { hasEvery: tags },
+    });
+  }
+
+  // 5. Final where object
+  const where: Prisma.PostWhereInput =
+    andConditions.length > 0 ? { AND: andConditions } : {};
+
   const result = await prisma.post.findMany({
-    where: where,
+    where,
     skip,
     take: limit,
-    orderBy: {
-      createdAt: "desc",
-    },
+    orderBy: { createdAt: "desc" },
     include: {
       author: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
+        select: { id: true, name: true, email: true },
       },
     },
   });
-  const total = await prisma.post.count(where);
+
+  const total = await prisma.post.count({ where }); // Note: Pass as an object { where }
+
   return {
     data: result,
     pagination: {
@@ -122,10 +126,59 @@ const deletePost = async (id: number) => {
   return result;
 };
 
+const getPostStat = async () => {
+  return await prisma.$transaction(async (tx) => {
+    const aggregates = await tx.post.aggregate({
+      _count: { _all: true },
+      _sum: { views: true },
+      _avg: { views: true },
+      _max: { views: true },
+      _min: { views: true },
+    });
+
+    const featuredCount = await tx.post.count({
+      where: {
+        isFeatured: true,
+      },
+    });
+
+    const topFeatured = await tx.post.findFirst({
+      where: { isFeatured: true },
+      orderBy: { views: "desc" },
+    });
+
+    const lastWeek = new Date();
+    lastWeek.setDate(lastWeek.getDate() - 7);
+    const lastWeekPostCount = await tx.post.count({
+      where: {
+        createdAt: {
+          gte: lastWeek,
+        },
+      },
+    });
+
+    return {
+      stats: {
+        totalPosts: aggregates._count._all ?? 0,
+        totalViews: aggregates._sum.views ?? 0,
+        avgViews: aggregates._avg.views ?? 0,
+        minViews: aggregates._min.views ?? 0,
+        maxViews: aggregates._max.views ?? 0,
+      },
+      featured: {
+        count: featuredCount,
+        topPost: topFeatured,
+        lastWeekPostCount: lastWeekPostCount,
+      },
+    };
+  });
+};
+
 export const PostService = {
   getAllPost,
   createPost,
   getPostById,
   updatePost,
   deletePost,
+  getPostStat,
 };

@@ -4,6 +4,7 @@ import { PostController } from "./post.controller";
 const router = express.Router();
 
 router.get("/", PostController.getAllPost);
+router.get("/stats", PostController.getPostStat);
 router.get("/:id", PostController.getPostById);
 router.post("/", PostController.createPost);
 router.patch("/:id", PostController.updatePost);
